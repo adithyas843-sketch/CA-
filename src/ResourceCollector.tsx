@@ -26,7 +26,8 @@ export function ResourceCollector({ subjects, chapters }: { subjects: Subject[];
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setSaving(true); setError(''); setSaved('');
     try {
       const result = await api<{ duplicate: boolean }>('/api/resources', { method: 'POST', body: JSON.stringify({
@@ -35,7 +36,7 @@ export function ResourceCollector({ subjects, chapters }: { subjects: Subject[];
         language: form.get('language'), subjectId: subjectId || null, chapterId: chapterId || null, sourceName: form.get('sourceName'), sourceUrl: form.get('sourceUrl'),
       }) });
       setSaved(result.duplicate ? 'This link was already in your catalogue. Its source reference was added.' : 'Resource saved to your catalogue for review.');
-      event.currentTarget.reset(); setSubjectId(''); setChapterId(''); await refresh();
+      formElement.reset(); setSubjectId(''); setChapterId(''); await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : 'Resource could not be saved.'); }
     finally { setSaving(false); }
   }
