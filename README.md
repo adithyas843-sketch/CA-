@@ -63,13 +63,14 @@ Development and production require separate D1 databases and R2 buckets. Never p
 1. Create `ca-final-os-dev` and `ca-final-os-prod` D1 databases and development/production R2 buckets.
 2. Replace the placeholder `database_id` values in `wrangler.toml` with the corresponding D1 IDs. Keep the two IDs separate.
 3. Set the Worker secret `OWNER_SETUP_TOKEN` for the deployment environment before first owner setup. Do not put it in Vite variables or commit it.
-4. Apply production migrations only after reviewing them and verifying a backup:
+4. Set `YOUTUBE_API_KEY` using Cloudflare Worker Secrets (`npx wrangler secret put YOUTUBE_API_KEY --env production`). Never use a `VITE_` variable or commit the key. YouTube discovery stays disabled until this secret is configured.
+5. Apply production migrations only after reviewing them and verifying a backup:
 
 ```sh
 pnpm db:migrate:prod
 ```
 
-5. Deploy the Worker with `npx wrangler deploy --env production` after Cloudflare resources and bindings are configured.
+6. Deploy the Worker with `npx wrangler deploy --env production` after Cloudflare resources and bindings are configured.
 
 The production frontend build can be hosted on Cloudflare Pages or served by a configured static asset binding in a later deployment phase. No production database, bucket, secrets, or deployment target has been provisioned by this repository yet.
 
@@ -84,6 +85,6 @@ The production frontend build can be hosted on Cloudflare Pages or served by a c
 
 ## Current scope
 
-Implemented: first-owner setup, sign-in/out, protected subject/chapter/session endpoints, six seed subjects, chapter creation/title/status editing, dashboard metrics from saved sessions, and timer recovery/queued session sync.
+Implemented: first-owner setup, sign-in/out, protected subject/chapter/session endpoints, six seed subjects, chapter creation/title/status editing, dashboard metrics from saved sessions, timer recovery/queued session sync, a D1-backed YouTube discovery dashboard, verified-channel review, editable preferred faculty settings, and a YouTube-backed Lecture Manager import.
 
-Not yet implemented: resource crawling, video/lecture library, notebook/PDF tools, practice tests, revision scheduler, AI features, scheduled backups, PWA/offline notebook sync, and production deployment. See [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) and [RESOURCE_COLLECTION_REPORT.md](RESOURCE_COLLECTION_REPORT.md).
+Not yet implemented: verified May 2028 ICAI syllabus mappings, notebook/PDF tools, practice tests, revision scheduler, AI features, scheduled backups, PWA/offline notebook sync, and production deployment. YouTube API discovery requires the Cloudflare secret and production D1 deployment. See [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md) and [RESOURCE_COLLECTION_REPORT.md](RESOURCE_COLLECTION_REPORT.md).
