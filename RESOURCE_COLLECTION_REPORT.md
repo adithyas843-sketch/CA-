@@ -2,7 +2,9 @@
 
 Updated: 23 November 2026
 
-No automated collector has run. No playlists, lecture files, PDFs, papers, or resource counts are claimed as collected. The catalogue currently accepts user-supplied links and stores link metadata only.
+No live collector run has occurred. No playlists, lecture files, PDFs, papers, or resource counts are claimed as collected. The catalogue accepts user-supplied links and includes a YouTube API discovery path that remains idle until its secret is configured.
+
+YouTube discovery is now implemented as an optional authorized API integration, but it has not been run here because no `YOUTUBE_API_KEY` Worker secret is configured. Therefore this report makes no claim that any videos or playlists have been discovered. The two faculty channel entries in the migration are identity-review candidates only; their IDs and names are not treated as verified or automatically imported.
 
 ## Source investigation
 
@@ -32,3 +34,12 @@ No automated collector has run. No playlists, lecture files, PDFs, papers, or re
 - Record the checked date, discovery method, access class, and source URL for each finding.
 - Keep uncertain subject/chapter mapping pending human review and avoid fabricated catalogue entries.
 - Recheck link status at a bounded, polite rate. Report working links only after a check.
+
+## YouTube Data API integration
+
+- Search is independent for all six subjects and includes query variants for detailed lectures, complete courses, chapter-wise classes, marathons, revision, fast-track, MCQs, case studies, and exam preparation. Preferred names, spelling aliases, and broader queries are retained so alternatives remain discoverable.
+- Search results are paginated and deduplicated in D1. Playlist contents use `playlistItems.list`; video metadata uses `videos.list`. Stored fields include titles, IDs/URLs, channel/faculty, playlist and position, duration, thumbnails, publication date, description, captions availability, mapping confidence, and provenance.
+- Channel candidates require a direct YouTube API fetch and manual identity review before a video can be imported to Lecture Manager. Search resemblance alone never verifies a preferred faculty.
+- YouTube metadata is obtained through the official API and video playback uses YouTube's official embed. The integration does not download or copy video content. Set the key with Cloudflare Worker Secrets as `YOUTUBE_API_KEY`; never expose it in frontend variables or Git.
+- The May 2028 ICAI syllabus is still marked pending verification. No syllabus-specific relevance or chapter mapping is presented as verified while the official source and chapter list remain unreviewed.
+- ShriCasa, NextGen Career Circle, CA Study Partner, and ICAI remain optional secondary sources under the access notes above; automated crawling is not enabled for those sites.

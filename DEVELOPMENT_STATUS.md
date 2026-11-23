@@ -38,12 +38,19 @@ Updated: 23 November 2026
 - Added a Resource Collector page for manual link import and catalogue review. Subject/chapter mappings stay pending human review.
 - Automated fetching is deliberately not enabled while robots/access status is unresolved. CA Study Partner automation remains prohibited absent authorized export/API access.
 
+## Phase 2 YouTube discovery extension
+
+- YouTube Data API v3 is the primary video discovery source. The Worker queues subject-specific searches for all six subjects and detailed, full-course, chapter-wise, marathon, revision, fast-track, MCQ, case-study, and exam-preparation categories. Queries include preferred faculty names, spelling aliases, and broader subject searches so alternatives remain available.
+- Playlist search results are stored in D1; playlist contents are paginated with `playlistItems.list`, and video metadata is fetched with `videos.list`. Results are deduplicated by YouTube video ID and retain their API metadata, playlist position, mapping confidence, captions availability, and source provenance.
+- Faculty preferences are editable in Settings. IDT defaults to Ridhi Baghmar and AFM to Prateek Jagathi. Candidate channels remain pending until fetched from YouTube and explicitly reviewed; videos cannot be imported into Lecture Manager until their channel identity is verified.
+- Classification suggestions stay pending for human approval. The current ICAI May 2028 syllabus version remains unverified, so video mentions of the attempt do not establish syllabus relevance and no chapter list is fabricated.
+- The API key is read only from the Worker `YOUTUBE_API_KEY` secret. Discovery has not been run in this environment, so no video or playlist counts are claimed. The production secret, D1 IDs, migration, deployment, and a production redeployment persistence check still require configured Cloudflare resources.
+
 ## Validation status
 
 - Source review: complete for the initial repository contents.
-- Automated unit tests: 10 passing after Phase 2 changes, including migration registry and resource URL canonicalization/deduplication.
-- Local Worker integration test: Phase 1 routes passed before Phase 2. Added source registry/import/deduplication assertions for Phase 2, but the test server could not be started because Wrangler's local command failed while fetching required metadata in this network-restricted session.
-- Typecheck: passing.
-- Frontend production build: passing.
+- Automated unit tests: 14 passing for the current local implementation, including all three additive migrations, existing-resource retention, preferred defaults, search coverage, classification, duration parsing, and resource URL canonicalization/deduplication.
+- Local Worker integration test: passed after applying migrations `0002` and `0003`. It passed again after restarting Wrangler, confirming persistence across a local Worker restart.
+- Typecheck: passing after the YouTube and topic-mapping changes. Frontend production build: passing.
 - Responsive browser review: passed at 390px and 768px; actual Android stylus hardware remains untested.
-- Initial local D1 migration (`0001`) was applied in Phase 1. Phase 2 migration (`0002`) passed the in-memory SQLite migration test, but Wrangler could not apply it locally in this session because its command failed while fetching metadata. Production deployment is not configured or attempted.
+- Local D1 migrations `0001` through `0003` applied successfully. Production deployment is not configured or attempted. YouTube API discovery was not run because no API key secret is configured; no live result count is claimed.
