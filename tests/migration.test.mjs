@@ -25,5 +25,6 @@ test('migrations create core tables, source registry, and six subject records', 
   assert.equal(db.prepare("SELECT faculty_name FROM user_faculty_preferences WHERE user_id='test-user' AND subject_id='subject-afm'").get().faculty_name, 'Prateek Jagathi');
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM youtube_faculty_channels WHERE identity_status='pending_review'").get().count, 2);
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM youtube_quota_usage").get().count, 0);
+  assert.ok(db.prepare("SELECT name FROM pragma_table_info('lecture_library') WHERE name='topic_id'").get());
   db.close();
 });

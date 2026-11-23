@@ -45,8 +45,8 @@ async function reserveYouTubeQuota(env: Env, method: QuotaMethod): Promise<void>
   const date = youtubeQuotaDate();
   await env.DB.prepare('INSERT OR IGNORE INTO youtube_quota_usage (quota_date) VALUES (?)').bind(date).run();
   const sql = method === 'search'
-    ? 'UPDATE youtube_quota_usage SET search_calls=search_calls+1,total_units=total_units+100,updated_at=CURRENT_TIMESTAMP WHERE quota_date=? AND search_calls<90 AND total_units<=8900'
-    : 'UPDATE youtube_quota_usage SET total_units=total_units+1,updated_at=CURRENT_TIMESTAMP WHERE quota_date=? AND total_units<9000';
+    ? 'UPDATE youtube_quota_usage SET search_calls=search_calls+1,total_units=total_units+100,updated_at=CURRENT_TIMESTAMP WHERE quota_date=? AND search_calls<70 AND total_units<=7000'
+    : 'UPDATE youtube_quota_usage SET total_units=total_units+1,updated_at=CURRENT_TIMESTAMP WHERE quota_date=? AND total_units<9800';
   const result = await env.DB.prepare(sql).bind(date).run();
   if (!result.meta.changes) throw new YouTubeApiError('The local YouTube daily safety quota is reached. Discovery can resume after the Pacific Time quota reset.', 429, 'localQuotaExceeded');
 }
@@ -234,6 +234,92 @@ async function runYouTubeJob(env: Env, userId: string, job: YouTubeJobRow): Prom
     if (!nextPageToken) await env.DB.prepare('UPDATE youtube_faculty_channels SET last_scanned_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE channel_id=?').bind(job.target_channel_id).run();
   }
   return { discovered, nextPageToken };
+}
+
+async function refreshYoutubeMetadata(env: Env): Promise<void> {
+  if (!env.YOUTUBE_API_KEY) return;
+  const cutoff = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+  const reserve = (method: QuotaMethod) => reserveYouTubeQuota(env, method);
+  try {
+    const videos = await env.DB.prepare('SELECT id,youtube_video_id FROM resources WHERE youtube_video_id IS NOT NULL AND last_verified_at<? ORDER BY last_verified_at LIMIT 2500').bind(cutoff).all<{ id: string; youtube_video_id: string }>();
+    for (let offset = 0; offset < videos.results.length; offset += 50) {
+      const batch = videos.results.slice(offset, offset + 50);
+      const found = await youtubeGet<{ items?: Record<string, unknown>[] }>(env.YOUTUBE_API_KEY, 'videos', { part: 'snippet,contentDetails,status', id: batch.map((item) => item.youtube_video_id).join(',') }, reserve);
+      const byId = new Map((found.items ?? []).map((item) => [String(item.id), item]));
+      for (const row of batch) {
+        const current = byId.get(row.youtube_video_id);
+        if (current) await saveYoutubeVideo(env, 'system-refresh', current, null, null);
+        else await env.DB.batch([
+          env.DB.prepare(`UPDATE resources SET title='Unavailable YouTube video',youtube_video_id=NULL,youtube_channel_id=NULL,
+            youtube_channel_title=NULL,youtube_playlist_id=NULL,description='',thumbnail_url=NULL,youtube_duration_iso=NULL,
+            duration_seconds=NULL,captions_available=NULL,lecture_type=NULL,attempt_relevance='unverified',provider=NULL,
+            verification_status='broken',last_verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(row.id),
+          env.DB.prepare("DELETE FROM resource_sources WHERE resource_id=? AND collection_method='youtube_data_api'").bind(row.id),
+        ]);
+      }
+    }
+
+    const playlists = await env.DB.prepare('SELECT playlist_id FROM youtube_playlists WHERE updated_at<? ORDER BY updated_at LIMIT 2500').bind(cutoff).all<{ playlist_id: string }>();
+    for (let offset = 0; offset < playlists.results.length; offset += 50) {
+      const batch = playlists.results.slice(offset, offset + 50);
+      const found = await youtubeGet<{ items?: Record<string, unknown>[] }>(env.YOUTUBE_API_KEY, 'playlists', { part: 'snippet,contentDetails,status', id: batch.map((item) => item.playlist_id).join(',') }, reserve);
+      const byId = new Map((found.items ?? []).map((item) => [String(item.id), item]));
+      for (const row of batch) {
+        const item = byId.get(row.playlist_id);
+        if (item) await saveYoutubePlaylist(env, item, null);
+        else await env.DB.batch([
+          env.DB.prepare('UPDATE resources SET youtube_playlist_id=NULL,updated_at=CURRENT_TIMESTAMP WHERE youtube_playlist_id=?').bind(row.playlist_id),
+          env.DB.prepare('DELETE FROM youtube_playlists WHERE playlist_id=?').bind(row.playlist_id),
+        ]);
+      }
+    }
+
+    const channels = await env.DB.prepare('SELECT channel_id,channel_title FROM youtube_faculty_channels WHERE updated_at<? ORDER BY updated_at LIMIT 2500').bind(cutoff).all<{ channel_id: string; channel_title: string }>();
+    for (let offset = 0; offset < channels.results.length; offset += 50) {
+      const batch = channels.results.slice(offset, offset + 50);
+      const found = await youtubeGet<{ items?: Record<string, unknown>[] }>(env.YOUTUBE_API_KEY, 'channels', { part: 'snippet,contentDetails', id: batch.map((item) => item.channel_id).join(',') }, reserve);
+      const byId = new Map((found.items ?? []).map((item) => [String(item.id), item]));
+      for (const row of batch) {
+        const item = byId.get(row.channel_id);
+        const snippet = item?.snippet as Record<string, unknown> | undefined;
+        if (snippet) {
+          const title = String(snippet.title ?? row.channel_title);
+          const changed = title !== row.channel_title;
+          await env.DB.prepare(`UPDATE youtube_faculty_channels SET channel_title=?,description=?,custom_url=?,identity_status=CASE WHEN ?=1 THEN 'pending_review' ELSE identity_status END,
+            identity_checked_at=CASE WHEN ?=1 THEN NULL ELSE identity_checked_at END,updated_at=CURRENT_TIMESTAMP WHERE channel_id=?`)
+            .bind(title, String(snippet.description ?? ''), typeof snippet.customUrl === 'string' ? snippet.customUrl : null, changed ? 1 : 0, changed ? 1 : 0, row.channel_id).run();
+        } else {
+          await env.DB.prepare("UPDATE youtube_faculty_channels SET channel_title='Unavailable YouTube channel',description='',custom_url=NULL,identity_status='rejected',identity_checked_at=CURRENT_TIMESTAMP,verification_evidence='YouTube no longer returns this public channel.',updated_at=CURRENT_TIMESTAMP WHERE channel_id=?").bind(row.channel_id).run();
+        }
+      }
+    }
+
+    await env.DB.prepare(`INSERT INTO youtube_discovery_jobs (id,job_type,target_playlist_id,status)
+      SELECT lower(hex(randomblob(16))),'playlist_items',p.playlist_id,'queued' FROM youtube_playlists p
+      WHERE (p.last_scanned_at IS NULL OR p.last_scanned_at<?) AND NOT EXISTS
+      (SELECT 1 FROM youtube_discovery_jobs j WHERE j.job_type='playlist_items' AND j.target_playlist_id=p.playlist_id AND j.status IN ('queued','running'))`).bind(cutoff).run();
+    for (let count = 0; count < 100; count += 1) {
+      const job = await env.DB.prepare(`SELECT id,job_type,subject_id,lecture_type,query,target_channel_id,target_playlist_id,page_token FROM youtube_discovery_jobs
+        WHERE job_type='playlist_items' AND status='queued' AND (retry_after IS NULL OR retry_after<=?) ORDER BY created_at LIMIT 1`).bind(new Date().toISOString()).first<YouTubeJobRow>();
+      if (!job) break;
+      const lock = await env.DB.prepare("UPDATE youtube_discovery_jobs SET status='running',attempt_count=attempt_count+1 WHERE id=? AND status='queued'").bind(job.id).run();
+      if (!lock.meta.changes) continue;
+      try {
+        const result = await runYouTubeJob(env, 'system-refresh', job);
+        const status = result.nextPageToken ? 'queued' : 'completed';
+        await env.DB.prepare(`UPDATE youtube_discovery_jobs SET status=?,page_token=?,retry_after=NULL,error_summary=NULL,
+          discovered_count=discovered_count+?,finished_at=CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=?`)
+          .bind(status, result.nextPageToken, result.discovered, status, job.id).run();
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0,350) : 'Metadata refresh failed.';
+        await env.DB.prepare("UPDATE youtube_discovery_jobs SET status='queued',retry_after=?,error_summary=?,finished_at=NULL WHERE id=?")
+          .bind(new Date(Date.now()+24*60*60*1000).toISOString(), message, job.id).run();
+        break;
+      }
+    }
+  } catch (error) {
+    console.error('YouTube API metadata refresh paused; it will resume on the next scheduled run.', error);
+  }
 }
 const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
@@ -787,5 +873,8 @@ export default {
       console.error('Request failed', error);
       return fail('The request could not be completed.', 500);
     }
+  },
+  scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): void {
+    ctx.waitUntil(refreshYoutubeMetadata(env));
   },
 };

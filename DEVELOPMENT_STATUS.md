@@ -44,6 +44,7 @@ Updated: 23 November 2026
 - Playlist search results are stored in D1; playlist contents are paginated with `playlistItems.list`, and video metadata is fetched with `videos.list`. Results are deduplicated by YouTube video ID and retain their API metadata, playlist position, mapping confidence, captions availability, and source provenance.
 - Faculty preferences are editable in Settings. IDT defaults to Ridhi Baghmar and AFM to Prateek Jagathi. Candidate channels remain pending until fetched from YouTube and explicitly reviewed; videos cannot be imported into Lecture Manager until their channel identity is verified.
 - Classification suggestions stay pending for human approval. The current ICAI May 2028 syllabus version remains unverified, so video mentions of the attempt do not establish syllabus relevance and no chapter list is fabricated.
+- A daily Worker cron refreshes stale video, playlist, channel, and playlist-item API data after 20 days, before YouTube's 30-day API-data refresh/delete limit. If YouTube no longer returns a video or playlist, its API metadata is removed while the resource link record remains.
 - The API key is read only from the Worker `YOUTUBE_API_KEY` secret. Discovery has not been run in this environment, so no video or playlist counts are claimed. The production secret, D1 IDs, migration, deployment, and a production redeployment persistence check still require configured Cloudflare resources.
 
 ## Validation status
