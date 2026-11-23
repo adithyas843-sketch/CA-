@@ -1,0 +1,31 @@
+{
+  "name": "ca-final-os",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "worker:dev": "wrangler dev --local",
+    "db:migrate:local": "wrangler d1 migrations apply ca-final-os-dev --local",
+    "db:migrate:prod": "wrangler d1 migrations apply ca-final-os-prod --remote --env production",
+    "typecheck": "tsc -b --pretty false",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test:integration": "node --test tests/worker-integration.mjs"
+  },
+  "dependencies": {
+    "vite": "^7.0.0",
+    "typescript": "^5.8.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lucide-react": "^0.468.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "@cloudflare/workers-types": "^4.20251118.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,12 @@
+packages:
+  - .
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+
+supportedArchitectures:
+  os:
+    - win32
+  cpu:
+    - x64
