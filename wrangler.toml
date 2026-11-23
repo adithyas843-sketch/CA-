@@ -1,0 +1,32 @@
+name = "ca-final-os-api"
+main = "worker/index.ts"
+compatibility_date = "2026-11-23"
+
+[vars]
+APP_ENV = "development"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ca-final-os-dev"
+database_id = "replace-with-development-d1-id"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "ca-final-os-dev-files"
+
+[env.production]
+name = "ca-final-os-api-production"
+
+[env.production.vars]
+APP_ENV = "production"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "ca-final-os-prod"
+database_id = "replace-with-production-d1-id"
+migrations_dir = "migrations"
+
+[[env.production.r2_buckets]]
+binding = "FILES"
+bucket_name = "ca-final-os-prod-files"
