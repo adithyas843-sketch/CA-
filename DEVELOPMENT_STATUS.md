@@ -46,4 +46,4 @@ Updated: 23 November 2026
 - Typecheck: passing.
 - Frontend production build: passing.
 - Responsive browser review: passed at 390px and 768px; actual Android stylus hardware remains untested.
-- Local D1 migration: applied successfully. Production deployment is not configured or attempted.
+- Initial local D1 migration (`0001`) was applied in Phase 1. Phase 2 migration (`0002`) passed the in-memory SQLite migration test, but Wrangler could not apply it locally in this session because its command failed while fetching metadata. Production deployment is not configured or attempted.
