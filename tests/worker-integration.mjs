@@ -54,6 +54,27 @@ test('local Worker auth, subject, chapter, and session routes persist data', asy
   const chapters = await request('/api/chapters?subjectId=subject-fr', { cookie });
   assert.ok(chapters.payload.chapters.some((item) => item.id === chapterId && item.title === 'Updated integration chapter' && item.status === 'learning'));
 
+  const sourceRegistry = await request('/api/resource-sources', { cookie });
+  assert.equal(sourceRegistry.response.status, 200);
+  assert.equal(sourceRegistry.payload.sources.length, 4);
+  assert.equal(sourceRegistry.payload.sources.find((source) => source.name === 'CA Study Partner').policy_status, 'prohibits_automated_extraction');
+  const imported = await request('/api/resources', { method: 'POST', cookie, body: {
+    url: 'https://youtu.be/dedup42?t=20', title: 'Integration lecture link', resourceType: 'class',
+    sourceName: 'Integration test', sourceUrl: 'https://example.org/lessons', subjectId: 'subject-fr', chapterId,
+  } });
+  assert.equal(imported.response.status, 201, JSON.stringify(imported.payload));
+  assert.equal(imported.payload.duplicate, false);
+  const duplicate = await request('/api/resources', { method: 'POST', cookie, body: {
+    url: 'https://www.youtube.com/watch?v=dedup42&utm_source=test', title: 'Same lecture', resourceType: 'class',
+  } });
+  assert.equal(duplicate.response.status, 201, JSON.stringify(duplicate.payload));
+  assert.equal(duplicate.payload.duplicate, true);
+  const resourceList = await request('/api/resources', { cookie });
+  const matchingResources = resourceList.payload.resources.filter((item) => item.canonical_url === 'https://www.youtube.com/watch?v=dedup42');
+  assert.equal(matchingResources.length, 1);
+  assert.equal(matchingResources[0].review_status, 'pending');
+  assert.equal(matchingResources[0].chapter_id, chapterId);
+
   const endedAt = new Date();
   const startedAt = new Date(endedAt.valueOf() - 60_000);
   const sessionBody = { id: crypto.randomUUID(), subjectId: 'subject-fr', activity: 'reading', startedAt: startedAt.toISOString(), endedAt: endedAt.toISOString(), durationSeconds: 60 };

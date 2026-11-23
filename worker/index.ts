@@ -17,6 +17,22 @@ const json = (data: unknown, status = 200, headers: HeadersInit = {}) =>
 
 const fail = (message: string, status: number) => json({ error: message }, status);
 const id = () => crypto.randomUUID();
+export const canonicalResourceUrl = (raw: string): string | null => {
+  try {
+    const value = new URL(raw.trim());
+    if (!['http:', 'https:'].includes(value.protocol) || value.username || value.password) return null;
+    value.hash = '';
+    for (const key of [...value.searchParams.keys()]) if (/^(utm_.+|fbclid|gclid|mc_cid|mc_eid)$/i.test(key)) value.searchParams.delete(key);
+    const video = value.hostname.toLowerCase().replace(/^www\./, '') === 'youtube.com' ? value.searchParams.get('v') : null;
+    const shortVideo = value.hostname.toLowerCase() === 'youtu.be' ? value.pathname.split('/').filter(Boolean)[0] : null;
+    const playlist = value.searchParams.get('list');
+    if (video) return `https://www.youtube.com/watch?v=${encodeURIComponent(video)}${playlist ? `&list=${encodeURIComponent(playlist)}` : ''}`;
+    if (shortVideo) return `https://www.youtube.com/watch?v=${encodeURIComponent(shortVideo)}`;
+    value.hostname = value.hostname.toLowerCase();
+    if ((value.protocol === 'https:' && value.port === '443') || (value.protocol === 'http:' && value.port === '80')) value.port = '';
+    return value.toString().replace(/\/$/, '');
+  } catch { return null; }
+};
 const bytesToBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 const asBase64Url = (bytes: Uint8Array) => bytesToBase64(bytes).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
@@ -163,6 +179,67 @@ async function handle(request: Request, env: Env): Promise<Response> {
       ORDER BY subjects.position, chapters.position`;
     const result = subjectId ? await env.DB.prepare(query).bind(subjectId).all() : await env.DB.prepare(query).all();
     return json({ chapters: result.results });
+  }
+
+  if (request.method === 'GET' && path === '/api/resource-sources') {
+    const result = await env.DB.prepare('SELECT id, name, base_url, terms_url, robots_status, policy_status, collection_mode, access_notes, last_investigated_at FROM resource_source_registry ORDER BY name').all();
+    return json({ sources: result.results });
+  }
+
+  if (request.method === 'GET' && path === '/api/resources') {
+    const result = await env.DB.prepare(`SELECT r.id, r.canonical_url, r.title, r.resource_type, r.access_type, r.verification_status,
+      r.provider, r.attempt, r.scheme, r.language, r.duration_seconds, r.published_at, r.last_verified_at,
+      m.subject_id, m.chapter_id, m.review_status, s.code AS subject_code,
+      (SELECT source_url FROM resource_sources WHERE resource_id = r.id ORDER BY discovered_at LIMIT 1) AS source_url,
+      (SELECT source_name FROM resource_sources WHERE resource_id = r.id ORDER BY discovered_at LIMIT 1) AS source_name,
+      (SELECT collection_method FROM resource_sources WHERE resource_id = r.id ORDER BY discovered_at LIMIT 1) AS collection_method
+      FROM resources r LEFT JOIN resource_mappings m ON m.resource_id = r.id
+      LEFT JOIN subjects s ON s.id = m.subject_id
+      ORDER BY r.created_at DESC LIMIT 250`).all();
+    return json({ resources: result.results });
+  }
+
+  if (request.method === 'POST' && path === '/api/resources') {
+    const body = await readJson(request);
+    const allowedTypes = ['class', 'study_material', 'question_paper', 'suggested_answer', 'rtp', 'mtp', 'mcq', 'practice', 'other'];
+    const canonical = typeof body?.url === 'string' ? canonicalResourceUrl(body.url) : null;
+    const title = typeof body?.title === 'string' ? body.title.trim() : '';
+    const resourceType = typeof body?.resourceType === 'string' ? body.resourceType : '';
+    if (!body || !canonical || !title || title.length > 240 || !allowedTypes.includes(resourceType)) return fail('Enter a valid HTTP(S) link, a title up to 240 characters, and a supported resource type.', 400);
+    const provenance = typeof body.sourceUrl === 'string' && body.sourceUrl.trim() ? canonicalResourceUrl(body.sourceUrl) : canonical;
+    if (!provenance) return fail('The source page must be a valid HTTP(S) link.', 400);
+    const sourceName = typeof body.sourceName === 'string' && body.sourceName.trim() ? body.sourceName.trim().slice(0, 100) : new URL(provenance).hostname;
+    let subjectId: string | null = null;
+    let chapterId: string | null = null;
+    if (typeof body.subjectId === 'string' && body.subjectId) {
+      const subject = await env.DB.prepare('SELECT id FROM subjects WHERE id = ? AND is_active = 1').bind(body.subjectId).first<{ id: string }>();
+      if (!subject) return fail('The selected subject does not exist.', 400);
+      subjectId = subject.id;
+    }
+    if (typeof body.chapterId === 'string' && body.chapterId) {
+      if (!subjectId) return fail('Choose a subject before mapping a chapter.', 400);
+      const chapter = await env.DB.prepare('SELECT id FROM chapters WHERE id = ? AND subject_id = ? AND is_archived = 0').bind(body.chapterId, subjectId).first<{ id: string }>();
+      if (!chapter) return fail('The chapter must belong to the selected subject.', 400);
+      chapterId = chapter.id;
+    }
+    const resourceId = id();
+    await env.DB.prepare('INSERT OR IGNORE INTO resources (id, canonical_url, title, resource_type, provider, attempt, scheme, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(resourceId, canonical, title, resourceType,
+        typeof body.provider === 'string' ? body.provider.trim().slice(0, 120) || null : null,
+        typeof body.attempt === 'string' ? body.attempt.trim().slice(0, 40) || null : null,
+        typeof body.scheme === 'string' ? body.scheme.trim().slice(0, 80) || null : null,
+        typeof body.language === 'string' ? body.language.trim().slice(0, 60) || null : null).run();
+    const saved = await env.DB.prepare('SELECT id FROM resources WHERE canonical_url = ?').bind(canonical).first<{ id: string }>();
+    if (!saved) return fail('The resource could not be saved.', 500);
+    await env.DB.prepare('INSERT OR IGNORE INTO resource_sources (id, resource_id, source_url, source_name, collection_method) VALUES (?, ?, ?, ?, ?)')
+      .bind(id(), saved.id, provenance, sourceName, 'manual_link_import').run();
+    if (subjectId) {
+      await env.DB.prepare(`INSERT INTO resource_mappings (id, resource_id, subject_id, confidence, review_status)
+        SELECT ?, ?, ?, 0, 'pending' WHERE NOT EXISTS (SELECT 1 FROM resource_mappings WHERE resource_id = ? AND subject_id = ?)`)
+        .bind(id(), saved.id, subjectId, saved.id, subjectId).run();
+      if (chapterId) await env.DB.prepare("UPDATE resource_mappings SET chapter_id = ? WHERE resource_id = ? AND subject_id = ? AND review_status = 'pending'").bind(chapterId, saved.id, subjectId).run();
+    }
+    return json({ resource: { id: saved.id, canonical_url: canonical, title, resource_type: resourceType }, duplicate: saved.id !== resourceId }, 201);
   }
 
   if (request.method === 'POST' && path === '/api/chapters') {

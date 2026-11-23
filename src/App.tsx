@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Activity, AlarmClock, ArrowDownRight, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp, Clock3, FileText, LayoutDashboard, LogOut, Menu, Play, Plus, RefreshCw, ShieldCheck, Square, TimerReset, X } from 'lucide-react';
+import { Activity, AlarmClock, ArrowDownRight, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp, Clock3, FileText, LayoutDashboard, Library, LogOut, Menu, Play, Plus, RefreshCw, ShieldCheck, Square, TimerReset, X } from 'lucide-react';
 import { api, ApiError, formatDuration, type Chapter, type DashboardData, type Subject } from './lib/api';
 import { elapsedSeconds, type Activity as StudyActivity, type TimerState } from './lib/studyTimer';
+import { ResourceCollector } from './ResourceCollector';
 
 type AuthUser = { id: string; email: string };
-type Page = 'dashboard' | 'subjects';
+type Page = 'dashboard' | 'subjects' | 'resources';
 const TIMER_KEY = 'ca-final-os.active-study-timer.v1';
 const OUTBOX_KEY = 'ca-final-os.study-session-outbox.v1';
 interface PendingSession { id: string; subjectId: string | null; activity: StudyActivity; startedAt: string; endedAt: string; durationSeconds: number; }
@@ -213,6 +214,7 @@ function App() {
         <nav className="primary-nav" aria-label="Main navigation">
           <button className={`nav-item ${page === 'dashboard' ? 'active' : ''}`} onClick={() => { setPage('dashboard'); setMenuOpen(false); }}><LayoutDashboard size={18} /><span>Dashboard</span></button>
           <button className={`nav-item ${page === 'subjects' ? 'active' : ''}`} onClick={() => { setPage('subjects'); setMenuOpen(false); }}><BookOpen size={18} /><span>Subjects & chapters</span><span className="nav-count">{subjects.length || 6}</span></button>
+          <button className={`nav-item ${page === 'resources' ? 'active' : ''}`} onClick={() => { setPage('resources'); setMenuOpen(false); }}><Library size={18} /><span>Resource collector</span></button>
         </nav>
         <div className="sidebar-card"><div className="sidebar-card-icon"><ShieldCheck size={16} /></div><div><strong>Your data, persisted</strong><span>Study sessions save to your private database.</span></div></div>
         <div className="sidebar-bottom"><div className="connection"><span className={`status-dot ${health}`} />{health === 'connected' ? 'Database connected' : health === 'offline' ? 'Connection issue' : 'Checking database'}</div><button className="profile-button" onClick={() => void logout()}><span className="avatar">{user.email.slice(0, 1).toUpperCase()}</span><span className="profile-copy"><strong>{user.email}</strong><small>Owner account</small></span><LogOut size={16} /></button></div>
@@ -220,14 +222,14 @@ function App() {
       {menuOpen && <button className="scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
 
       <main className="main-area">
-        <header className="topbar"><button className="icon-button menu-button" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Menu size={19} /></button><div className="breadcrumbs"><span>CA Final OS</span><span className="crumb-separator">/</span><strong>{page === 'dashboard' ? 'Dashboard' : 'Subjects'}</strong></div><div className="topbar-right"><span className="attempt-pill"><span className="attempt-dot" />MAY 2028 ATTEMPT</span><button className="icon-button help-button" aria-label="Study workspace information" title="Your dashboard shows saved study activity; syllabus coverage is added as it is verified."><CircleHelp size={18} /></button></div></header>
+        <header className="topbar"><button className="icon-button menu-button" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Menu size={19} /></button><div className="breadcrumbs"><span>CA Final OS</span><span className="crumb-separator">/</span><strong>{page === 'dashboard' ? 'Dashboard' : page === 'subjects' ? 'Subjects' : 'Resource collector'}</strong></div><div className="topbar-right"><span className="attempt-pill"><span className="attempt-dot" />MAY 2028 ATTEMPT</span><button className="icon-button help-button" aria-label="Study workspace information" title="Your dashboard shows saved study activity; syllabus coverage is added as it is verified."><CircleHelp size={18} /></button></div></header>
         {error && <div className="notice" role="status"><span>{error}</span><button aria-label="Dismiss message" onClick={() => setError('')}><X size={16} /></button></div>}
 
         {page === 'dashboard' ? (
           <DashboardPage subjects={subjects} chapters={chapters} data={dashboard} timer={timer} timerSeconds={runningSeconds} selectedSubjectId={selectedSubjectId} selectedActivity={selectedActivity} onSubject={setSelectedSubjectId} onActivity={setSelectedActivity} onStart={startTimer} onPause={togglePause} onStop={stopTimer} onNavigate={setPage} onRefresh={() => void loadWorkspace()} />
-        ) : (
+        ) : page === 'subjects' ? (
           <SubjectsPage subjects={subjects} chapters={visibleChapters} selected={selectedSubject} onSelect={setSelectedSubject} onAdd={addChapter} onUpdate={updateChapter} onRefresh={() => void loadWorkspace()} />
-        )}
+        ) : <ResourceCollector subjects={subjects} chapters={chapters} />}
         <footer className="footer-note"><span>Built for steady, deliberate preparation.</span><span>Study data syncs to your account</span></footer>
       </main>
     </div>
